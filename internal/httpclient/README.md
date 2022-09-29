@@ -92,11 +92,13 @@ Class | Method | HTTP request | Description
 *V0alpha2Api* | [**AdminDeleteIdentitySessions**](docs/V0alpha2Api.md#admindeleteidentitysessions) | **Delete** /admin/identities/{id}/sessions | Calling this endpoint irrecoverably and permanently deletes and invalidates all sessions that belong to the given Identity.
 *V0alpha2Api* | [**AdminExtendSession**](docs/V0alpha2Api.md#adminextendsession) | **Patch** /admin/sessions/{id}/extend | Calling this endpoint extends the given session ID. If &#x60;session.earliest_possible_extend&#x60; is set it will only extend the session after the specified time has passed.
 *V0alpha2Api* | [**AdminGetIdentity**](docs/V0alpha2Api.md#admingetidentity) | **Get** /admin/identities/{id} | Get an Identity
+*V0alpha2Api* | [**AdminListCourierMessages**](docs/V0alpha2Api.md#adminlistcouriermessages) | **Get** /admin/courier/messages | List Messages
 *V0alpha2Api* | [**AdminListIdentities**](docs/V0alpha2Api.md#adminlistidentities) | **Get** /admin/identities | List Identities
 *V0alpha2Api* | [**AdminListIdentitySessions**](docs/V0alpha2Api.md#adminlistidentitysessions) | **Get** /admin/identities/{id}/sessions | This endpoint returns all sessions that belong to the given Identity.
+*V0alpha2Api* | [**AdminPatchIdentity**](docs/V0alpha2Api.md#adminpatchidentity) | **Patch** /admin/identities/{id} | Partially updates an Identity&#39;s field using [JSON Patch](https://jsonpatch.com/)
 *V0alpha2Api* | [**AdminUpdateIdentity**](docs/V0alpha2Api.md#adminupdateidentity) | **Put** /admin/identities/{id} | Update an Identity
 *V0alpha2Api* | [**CreateSelfServiceLogoutFlowUrlForBrowsers**](docs/V0alpha2Api.md#createselfservicelogoutflowurlforbrowsers) | **Get** /self-service/logout/browser | Create a Logout URL for Browsers
-*V0alpha2Api* | [**GetJsonSchema**](docs/V0alpha2Api.md#getjsonschema) | **Get** /schemas/{id} | 
+*V0alpha2Api* | [**GetIdentitySchema**](docs/V0alpha2Api.md#getidentityschema) | **Get** /schemas/{id} | 
 *V0alpha2Api* | [**GetSelfServiceError**](docs/V0alpha2Api.md#getselfserviceerror) | **Get** /self-service/errors | Get Self-Service Errors
 *V0alpha2Api* | [**GetSelfServiceLoginFlow**](docs/V0alpha2Api.md#getselfserviceloginflow) | **Get** /self-service/login/flows | Get Login Flow
 *V0alpha2Api* | [**GetSelfServiceRecoveryFlow**](docs/V0alpha2Api.md#getselfservicerecoveryflow) | **Get** /self-service/recovery/flows | Get Recovery Flow
@@ -140,6 +142,8 @@ Class | Method | HTTP request | Description
  - [AdminIdentityImportCredentials](docs/AdminIdentityImportCredentials.md)
  - [AdminUpdateIdentityBody](docs/AdminUpdateIdentityBody.md)
  - [AuthenticatorAssuranceLevel](docs/AuthenticatorAssuranceLevel.md)
+ - [CourierMessageStatus](docs/CourierMessageStatus.md)
+ - [CourierMessageType](docs/CourierMessageType.md)
  - [ErrorAuthenticatorAssuranceLevelNotSatisfied](docs/ErrorAuthenticatorAssuranceLevelNotSatisfied.md)
  - [GenericError](docs/GenericError.md)
  - [HealthNotReadyStatus](docs/HealthNotReadyStatus.md)
@@ -150,15 +154,17 @@ Class | Method | HTTP request | Description
  - [IdentityCredentialsOidcProvider](docs/IdentityCredentialsOidcProvider.md)
  - [IdentityCredentialsPassword](docs/IdentityCredentialsPassword.md)
  - [IdentityCredentialsType](docs/IdentityCredentialsType.md)
- - [IdentitySchema](docs/IdentitySchema.md)
+ - [IdentitySchemaContainer](docs/IdentitySchemaContainer.md)
  - [IdentityState](docs/IdentityState.md)
  - [InlineResponse200](docs/InlineResponse200.md)
  - [InlineResponse2001](docs/InlineResponse2001.md)
  - [InlineResponse503](docs/InlineResponse503.md)
  - [JsonError](docs/JsonError.md)
+ - [JsonPatch](docs/JsonPatch.md)
+ - [Message](docs/Message.md)
  - [NeedsPrivilegedSessionError](docs/NeedsPrivilegedSessionError.md)
  - [Pagination](docs/Pagination.md)
- - [RecoveryAddress](docs/RecoveryAddress.md)
+ - [RecoveryIdentityAddress](docs/RecoveryIdentityAddress.md)
  - [RevokedSessions](docs/RevokedSessions.md)
  - [SelfServiceBrowserLocationChangeRequiredError](docs/SelfServiceBrowserLocationChangeRequiredError.md)
  - [SelfServiceError](docs/SelfServiceError.md)
@@ -202,6 +208,8 @@ Class | Method | HTTP request | Description
  - [SubmitSelfServiceVerificationFlowWithLinkMethodBody](docs/SubmitSelfServiceVerificationFlowWithLinkMethodBody.md)
  - [SuccessfulSelfServiceLoginWithoutBrowser](docs/SuccessfulSelfServiceLoginWithoutBrowser.md)
  - [SuccessfulSelfServiceRegistrationWithoutBrowser](docs/SuccessfulSelfServiceRegistrationWithoutBrowser.md)
+ - [TokenPagination](docs/TokenPagination.md)
+ - [TokenPaginationHeaders](docs/TokenPaginationHeaders.md)
  - [UiContainer](docs/UiContainer.md)
  - [UiNode](docs/UiNode.md)
  - [UiNodeAnchorAttributes](docs/UiNodeAnchorAttributes.md)

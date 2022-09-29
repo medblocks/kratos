@@ -2,16 +2,15 @@ package jsonnet
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/linter"
 	"github.com/spf13/cobra"
 
 	"github.com/ory/x/cmdx"
+	"github.com/ory/x/jsonnetsecure"
 )
 
 func NewLintCmd() *cobra.Command {
@@ -31,14 +30,14 @@ func NewJsonnetLintCmd() *cobra.Command {
 ` + GlobHelp,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			vm := jsonnet.MakeVM()
+			vm := jsonnetsecure.MakeSecureVM()
 
 			for _, pattern := range args {
 				files, err := filepath.Glob(pattern)
 				cmdx.Must(err, `Glob path "%s" is not valid: %s`, pattern, err)
 
 				for _, file := range files {
-					content, err := ioutil.ReadFile(file)
+					content, err := os.ReadFile(file)
 					cmdx.Must(err, `Unable to read file "%s" because: %s`, file, err)
 
 					var outBuilder strings.Builder

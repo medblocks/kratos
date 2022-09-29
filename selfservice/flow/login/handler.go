@@ -86,11 +86,22 @@ func (h *Handler) RegisterAdminRoutes(admin *x.RouterAdmin) {
 	admin.GET(RouteSubmitFlow, x.RedirectToPublicRoute(h.d))
 }
 
-func (h *Handler) NewLoginFlow(w http.ResponseWriter, r *http.Request, ft flow.Type) (*Flow, error) {
-	conf := h.d.Config(r.Context())
-	f, err := NewFlow(conf, conf.SelfServiceFlowLoginRequestLifespan(), h.d.GenerateCSRFToken(r), r, ft)
+type FlowOption func(f *Flow)
+
+func WithFlowReturnTo(returnTo string) FlowOption {
+	return func(f *Flow) {
+		f.ReturnTo = returnTo
+	}
+}
+
+func (h *Handler) NewLoginFlow(w http.ResponseWriter, r *http.Request, ft flow.Type, opts ...FlowOption) (*Flow, error) {
+	conf := h.d.Config()
+	f, err := NewFlow(conf, conf.SelfServiceFlowLoginRequestLifespan(r.Context()), h.d.GenerateCSRFToken(r), r, ft)
 	if err != nil {
 		return nil, err
+	}
+	for _, o := range opts {
+		o(f)
 	}
 
 	if f.RequestedAAL == "" {
@@ -156,7 +167,8 @@ preLoginHook:
 		f.UI.Messages.Add(text.NewInfoLoginMFA())
 	}
 
-	for _, s := range h.d.LoginStrategies(r.Context()) {
+	var s Strategy
+	for _, s = range h.d.LoginStrategies(r.Context()) {
 		if err := s.PopulateLoginMethod(r, f.RequestedAAL, f); err != nil {
 			return nil, err
 		}
@@ -171,7 +183,8 @@ preLoginHook:
 	}
 
 	if err := h.d.LoginHookExecutor().PreLoginHook(w, r, f); err != nil {
-		return nil, err
+		h.d.LoginFlowErrorHandler().WriteFlowError(w, r, f, node.DefaultGroup, err)
+		return f, nil
 	}
 
 	if err := h.d.LoginFlowPersister().CreateLoginFlow(r.Context(), f); err != nil {
@@ -244,15 +257,15 @@ type initializeSelfServiceLoginFlowWithoutBrowser struct {
 //
 // More information can be found at [Ory Kratos User Login](https://www.ory.sh/docs/kratos/self-service/flows/user-login) and [User Registration Documentation](https://www.ory.sh/docs/kratos/self-service/flows/user-registration).
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Responses:
-//       200: selfServiceLoginFlow
-//       400: jsonError
-//       500: jsonError
+//	Responses:
+//	  200: selfServiceLoginFlow
+//	  400: jsonError
+//	  500: jsonError
 func (h *Handler) initAPIFlow(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	f, err := h.NewLoginFlow(w, r, flow.TypeAPI)
 	if err != nil {
@@ -289,11 +302,20 @@ type initializeSelfServiceLoginFlowForBrowsers struct {
 	//
 	// in: query
 	ReturnTo string `json:"return_to"`
+
+	// HTTP Cookies
+	//
+	// When using the SDK in a browser app, on the server side you must include the HTTP Cookie Header
+	// sent by the client to your server here. This ensures that CSRF and session cookies are respected.
+	//
+	// in: header
+	// name: Cookie
+	Cookies string `json:"Cookie"`
 }
 
 // swagger:route GET /self-service/login/browser v0alpha2 initializeSelfServiceLoginFlowForBrowsers
 //
-// Initialize Login Flow for Browsers
+// # Initialize Login Flow for Browsers
 //
 // This endpoint initializes a browser-based user login flow. This endpoint will set the appropriate
 // cookies and anti-CSRF measures required for browser-based flows.
@@ -315,22 +337,22 @@ type initializeSelfServiceLoginFlowForBrowsers struct {
 //
 // More information can be found at [Ory Kratos User Login](https://www.ory.sh/docs/kratos/self-service/flows/user-login) and [User Registration Documentation](https://www.ory.sh/docs/kratos/self-service/flows/user-registration).
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Responses:
-//       200: selfServiceLoginFlow
-//       303: emptyResponse
-//       400: jsonError
-//       500: jsonError
+//	Responses:
+//	  200: selfServiceLoginFlow
+//	  303: emptyResponse
+//	  400: jsonError
+//	  500: jsonError
 func (h *Handler) initBrowserFlow(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	a, err := h.NewLoginFlow(w, r, flow.TypeBrowser)
 	if errors.Is(err, ErrAlreadyLoggedIn) {
-		returnTo, redirErr := x.SecureRedirectTo(r, h.d.Config(r.Context()).SelfServiceBrowserDefaultReturnTo(),
-			x.SecureRedirectAllowSelfServiceURLs(h.d.Config(r.Context()).SelfPublicURL()),
-			x.SecureRedirectAllowURLs(h.d.Config(r.Context()).SelfServiceBrowserAllowedReturnToDomains()),
+		returnTo, redirErr := x.SecureRedirectTo(r, h.d.Config().SelfServiceBrowserDefaultReturnTo(r.Context()),
+			x.SecureRedirectAllowSelfServiceURLs(h.d.Config().SelfPublicURL(r.Context())),
+			x.SecureRedirectAllowURLs(h.d.Config().SelfServiceBrowserAllowedReturnToDomains(r.Context())),
 		)
 		if redirErr != nil {
 			h.d.SelfServiceErrorManager().Forward(r.Context(), w, r, redirErr)
@@ -344,7 +366,7 @@ func (h *Handler) initBrowserFlow(w http.ResponseWriter, r *http.Request, ps htt
 		return
 	}
 
-	x.AcceptToRedirectOrJSON(w, r, h.d.Writer(), a, a.AppendTo(h.d.Config(r.Context()).SelfServiceFlowLoginUI()).String())
+	x.AcceptToRedirectOrJSON(w, r, h.d.Writer(), a, a.AppendTo(h.d.Config().SelfServiceFlowLoginUI(r.Context())).String())
 }
 
 // nolint:deadcode,unused
@@ -371,7 +393,7 @@ type getSelfServiceLoginFlow struct {
 
 // swagger:route GET /self-service/login/flows v0alpha2 getSelfServiceLoginFlow
 //
-// Get Login Flow
+// # Get Login Flow
 //
 // This endpoint returns a login flow's context with, for example, error details and other information.
 //
@@ -386,7 +408,7 @@ type getSelfServiceLoginFlow struct {
 //	router.get('/login', async function (req, res) {
 //	  const flow = await client.getSelfServiceLoginFlow(req.header('cookie'), req.query['flow'])
 //
-//    res.render('login', flow)
+//	  res.render('login', flow)
 //	})
 //	```
 //
@@ -397,17 +419,17 @@ type getSelfServiceLoginFlow struct {
 //
 // More information can be found at [Ory Kratos User Login](https://www.ory.sh/docs/kratos/self-service/flows/user-login) and [User Registration Documentation](https://www.ory.sh/docs/kratos/self-service/flows/user-registration).
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Responses:
-//       200: selfServiceLoginFlow
-//       403: jsonError
-//       404: jsonError
-//       410: jsonError
-//       500: jsonError
+//	Responses:
+//	  200: selfServiceLoginFlow
+//	  403: jsonError
+//	  404: jsonError
+//	  410: jsonError
+//	  500: jsonError
 func (h *Handler) fetchFlow(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	ar, err := h.d.LoginFlowPersister().GetLoginFlow(r.Context(), x.ParseUUID(r.URL.Query().Get("id")))
 	if err != nil {
@@ -425,7 +447,7 @@ func (h *Handler) fetchFlow(w http.ResponseWriter, r *http.Request, _ httprouter
 
 	if ar.ExpiresAt.Before(time.Now()) {
 		if ar.Type == flow.TypeBrowser {
-			redirectURL := flow.GetFlowExpiredRedirectURL(h.d.Config(r.Context()), RouteInitBrowserFlow, ar.ReturnTo)
+			redirectURL := flow.GetFlowExpiredRedirectURL(r.Context(), h.d.Config(), RouteInitBrowserFlow, ar.ReturnTo)
 
 			h.d.Writer().WriteError(w, r, errors.WithStack(x.ErrGone.WithID(text.ErrIDSelfServiceFlowExpired).
 				WithReason("The login flow has expired. Redirect the user to the login flow init endpoint to initialize a new login flow.").
@@ -435,7 +457,7 @@ func (h *Handler) fetchFlow(w http.ResponseWriter, r *http.Request, _ httprouter
 		}
 		h.d.Writer().WriteError(w, r, errors.WithStack(x.ErrGone.WithID(text.ErrIDSelfServiceFlowExpired).
 			WithReason("The login flow has expired. Call the login flow init API endpoint to initialize a new login flow.").
-			WithDetail("api", urlx.AppendPaths(h.d.Config(r.Context()).SelfPublicURL(), RouteInitAPIFlow).String())))
+			WithDetail("api", urlx.AppendPaths(h.d.Config().SelfPublicURL(r.Context()), RouteInitAPIFlow).String())))
 		return
 	}
 
@@ -479,7 +501,7 @@ type submitSelfServiceLoginFlowBody struct{}
 
 // swagger:route POST /self-service/login v0alpha2 submitSelfServiceLoginFlow
 //
-// Submit a Login Flow
+// # Submit a Login Flow
 //
 // :::info
 //
@@ -507,33 +529,33 @@ type submitSelfServiceLoginFlowBody struct{}
 // If this endpoint is called with `Accept: application/json` in the header, the response contains the flow without a redirect. In the
 // case of an error, the `error.id` of the JSON response body can be one of:
 //
-// - `session_already_available`: The user is already signed in.
-// - `security_csrf_violation`: Unable to fetch the flow because a CSRF violation occurred.
-// - `security_identity_mismatch`: The requested `?return_to` address is not allowed to be used. Adjust this in the configuration!
-// - `browser_location_change_required`: Usually sent when an AJAX request indicates that the browser needs to open a specific URL.
-//		Most likely used in Social Sign In flows.
+//   - `session_already_available`: The user is already signed in.
+//   - `security_csrf_violation`: Unable to fetch the flow because a CSRF violation occurred.
+//   - `security_identity_mismatch`: The requested `?return_to` address is not allowed to be used. Adjust this in the configuration!
+//   - `browser_location_change_required`: Usually sent when an AJAX request indicates that the browser needs to open a specific URL.
+//     Most likely used in Social Sign In flows.
 //
 // More information can be found at [Ory Kratos User Login](https://www.ory.sh/docs/kratos/self-service/flows/user-login) and [User Registration Documentation](https://www.ory.sh/docs/kratos/self-service/flows/user-registration).
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Consumes:
-//     - application/json
-//     - application/x-www-form-urlencoded
+//	Consumes:
+//	- application/json
+//	- application/x-www-form-urlencoded
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Header:
-//     - Set-Cookie
+//	Header:
+//	- Set-Cookie
 //
-//     Responses:
-//       200: successfulSelfServiceLoginWithoutBrowser
-//       303: emptyResponse
-//       400: selfServiceLoginFlow
-//       410: jsonError
-//       422: selfServiceBrowserLocationChangeRequiredError
-//       500: jsonError
+//	Responses:
+//	  200: successfulSelfServiceLoginWithoutBrowser
+//	  303: emptyResponse
+//	  400: selfServiceLoginFlow
+//	  410: jsonError
+//	  422: selfServiceBrowserLocationChangeRequiredError
+//	  500: jsonError
 func (h *Handler) submitFlow(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	rid, err := flow.GetFlowID(r)
 	if err != nil {
@@ -565,7 +587,7 @@ func (h *Handler) submitFlow(w http.ResponseWriter, r *http.Request, _ httproute
 			return
 		}
 
-		http.Redirect(w, r, h.d.Config(r.Context()).SelfServiceBrowserDefaultReturnTo().String(), http.StatusSeeOther)
+		http.Redirect(w, r, h.d.Config().SelfServiceBrowserDefaultReturnTo(r.Context()).String(), http.StatusSeeOther)
 		return
 	} else if e := new(session.ErrNoActiveSessionFound); errors.As(err, &e) {
 		// Only failure scenario here is if we try to upgrade the session to a higher AAL without actually
@@ -588,14 +610,16 @@ continueLogin:
 	}
 
 	var i *identity.Identity
+	var group node.UiNodeGroup
 	for _, ss := range h.d.AllLoginStrategies() {
 		interim, err := ss.Login(w, r, f, sess)
+		group = ss.NodeGroup()
 		if errors.Is(err, flow.ErrStrategyNotResponsible) {
 			continue
 		} else if errors.Is(err, flow.ErrCompletedByStrategy) {
 			return
 		} else if err != nil {
-			h.d.LoginFlowErrorHandler().WriteFlowError(w, r, f, ss.NodeGroup(), err)
+			h.d.LoginFlowErrorHandler().WriteFlowError(w, r, f, group, err)
 			return
 		}
 
@@ -616,7 +640,7 @@ continueLogin:
 		return
 	}
 
-	if err := h.d.LoginHookExecutor().PostLoginHook(w, r, f, i, sess); err != nil {
+	if err := h.d.LoginHookExecutor().PostLoginHook(w, r, group, f, i, sess); err != nil {
 		if errors.Is(err, ErrAddressNotVerified) {
 			h.d.LoginFlowErrorHandler().WriteFlowError(w, r, f, node.DefaultGroup, errors.WithStack(schema.NewAddressNotVerifiedError()))
 			return

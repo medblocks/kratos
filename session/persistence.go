@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/bxcodec/faker/v3"
 	"github.com/gofrs/uuid"
@@ -40,6 +41,9 @@ type Persister interface {
 	// instead of a session ID.
 	GetSessionByToken(context.Context, string) (*Session, error)
 
+	// DeleteExpiredSessions deletes sessions that expired before the given time.
+	DeleteExpiredSessions(context.Context, time.Time, int) error
+
 	// DeleteSessionByToken deletes a session associated with the given token.
 	//
 	// Functionality is similar to DeleteSession but accepts a session token
@@ -61,7 +65,7 @@ func TestPersister(ctx context.Context, conf *config.Config, p interface {
 	identity.PrivilegedPool
 }) func(t *testing.T) {
 	return func(t *testing.T) {
-		conf.MustSet(config.ViperKeyIdentitySchemas, config.Schemas{
+		conf.MustSet(ctx, config.ViperKeyIdentitySchemas, config.Schemas{
 			{ID: "default", URL: "file://./stub/identity.schema.json"},
 		})
 

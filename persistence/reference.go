@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"time"
 
 	"github.com/ory/x/networkx"
 
@@ -43,6 +44,7 @@ type Persister interface {
 	link.RecoveryTokenPersister
 	link.VerificationTokenPersister
 
+	CleanupDatabase(context.Context, time.Duration, time.Duration, int) error
 	Close(context.Context) error
 	Ping() error
 	MigrationStatus(c context.Context) (popx.MigrationStatuses, error)
@@ -56,6 +58,6 @@ type Persister interface {
 
 type Networker interface {
 	WithNetworkID(sid uuid.UUID) Persister
-	NetworkID() uuid.UUID
+	NetworkID(ctx context.Context) uuid.UUID
 	DetermineNetwork(ctx context.Context) (*networkx.Network, error)
 }

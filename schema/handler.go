@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -49,9 +48,9 @@ func (h *Handler) RegisterPublicRoutes(public *x.RouterPublic) {
 		"/"+SchemasPath+"/*",
 		x.AdminPrefix+"/"+SchemasPath+"/*",
 	)
-	public.GET(fmt.Sprintf("/%s/:id", SchemasPath), h.getByID)
+	public.GET(fmt.Sprintf("/%s/:id", SchemasPath), h.getIdentitySchema)
 	public.GET(fmt.Sprintf("/%s", SchemasPath), h.getAll)
-	public.GET(fmt.Sprintf("%s/%s/:id", x.AdminPrefix, SchemasPath), h.getByID)
+	public.GET(fmt.Sprintf("%s/%s/:id", x.AdminPrefix, SchemasPath), h.getIdentitySchema)
 	public.GET(fmt.Sprintf("%s/%s", x.AdminPrefix, SchemasPath), h.getAll)
 }
 
@@ -62,13 +61,13 @@ func (h *Handler) RegisterAdminRoutes(admin *x.RouterAdmin) {
 
 // Raw JSON Schema
 //
-// swagger:model jsonSchema
+// swagger:model identitySchema
 // nolint:deadcode,unused
-type jsonSchema json.RawMessage
+type identitySchema json.RawMessage
 
 // nolint:deadcode,unused
-// swagger:parameters getJsonSchema
-type getJsonSchema struct {
+// swagger:parameters getIdentitySchema
+type getIdentitySchema struct {
 	// ID must be set to the ID of schema you want to get
 	//
 	// required: true
@@ -76,20 +75,20 @@ type getJsonSchema struct {
 	ID string `json:"id"`
 }
 
-// swagger:route GET /schemas/{id} v0alpha2 getJsonSchema
+// swagger:route GET /schemas/{id} v0alpha2 getIdentitySchema
 //
 // Get a JSON Schema
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Responses:
-//       200: jsonSchema
-//       404: jsonError
-//       500: jsonError
-func (h *Handler) getByID(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+//	Responses:
+//	  200: identitySchema
+//	  404: jsonError
+//	  500: jsonError
+func (h *Handler) getIdentitySchema(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	ss, err := h.r.IdentityTraitsSchemas(r.Context())
 	if err != nil {
 		h.r.Writer().WriteError(w, r, errors.WithStack(herodot.ErrInternalServerError.WithWrap(err)))
@@ -128,14 +127,14 @@ func (h *Handler) getByID(w http.ResponseWriter, r *http.Request, ps httprouter.
 // Raw identity Schema list
 //
 // swagger:model identitySchemas
-type IdentitySchemas []identitySchema
+type IdentitySchemas []identitySchemaContainer
 
-// swagger:model identitySchema
-type identitySchema struct {
+// swagger:model identitySchemaContainer
+type identitySchemaContainer struct {
 	// The ID of the Identity JSON Schema
 	ID string `json:"id"`
 	// The actual Identity JSON Schema
-	Schema json.RawMessage `json:"schema"`
+	Schema identitySchema `json:"schema"`
 }
 
 // nolint:deadcode,unused
@@ -148,14 +147,14 @@ type listIdentitySchemas struct {
 //
 // Get all Identity Schemas
 //
-//     Produces:
-//     - application/json
+//	Produces:
+//	- application/json
 //
-//     Schemes: http, https
+//	Schemes: http, https
 //
-//     Responses:
-//       200: identitySchemas
-//       500: jsonError
+//	Responses:
+//	  200: identitySchemas
+//	  500: jsonError
 func (h *Handler) getAll(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	page, itemsPerPage := x.ParsePagination(r)
 
@@ -176,20 +175,20 @@ func (h *Handler) getAll(w http.ResponseWriter, r *http.Request, ps httprouter.P
 			return
 		}
 
-		raw, err := ioutil.ReadAll(src)
+		raw, err := io.ReadAll(src)
 		_ = src.Close()
 		if err != nil {
 			h.r.Writer().WriteError(w, r, errors.WithStack(herodot.ErrInternalServerError.WithReasonf("The file for this JSON Schema ID could not be found or opened. This is a configuration issue.").WithDebugf("%+v", err)))
 			return
 		}
 
-		ss = append(ss, identitySchema{
+		ss = append(ss, identitySchemaContainer{
 			ID:     schema.ID,
 			Schema: raw,
 		})
 	}
 
-	x.PaginationHeader(w, urlx.AppendPaths(h.r.Config(r.Context()).SelfPublicURL(), fmt.Sprintf("/%s", SchemasPath)), int64(total), page, itemsPerPage)
+	x.PaginationHeader(w, urlx.AppendPaths(h.r.Config().SelfPublicURL(r.Context()), fmt.Sprintf("/%s", SchemasPath)), int64(total), page, itemsPerPage)
 	h.r.Writer().Write(w, r, ss)
 }
 

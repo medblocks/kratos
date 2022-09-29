@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/ory/x/jsonnetsecure"
+
 	"github.com/pkg/errors"
 
 	"github.com/google/go-jsonnet"
@@ -106,7 +108,7 @@ func (b *Builder) addJSONBody(template *bytes.Buffer, body interface{}) error {
 		return errors.WithStack(err)
 	}
 
-	vm := jsonnet.MakeVM()
+	vm := jsonnetsecure.MakeSecureVM()
 	vm.TLACode("ctx", buf.String())
 
 	res, err := vm.EvaluateAnonymousSnippet(b.conf.TemplateURI, template.String())
@@ -121,8 +123,9 @@ func (b *Builder) addJSONBody(template *bytes.Buffer, body interface{}) error {
 	}
 
 	rb := strings.NewReader(res)
-	b.r.Body = io.NopCloser(rb)
-	b.r.ContentLength = int64(rb.Len())
+	if err := b.r.SetBody(io.NopCloser(rb)); err != nil {
+		return errors.WithStack(err)
+	}
 
 	return nil
 }
@@ -137,7 +140,7 @@ func (b *Builder) addURLEncodedBody(template *bytes.Buffer, body interface{}) er
 		return err
 	}
 
-	vm := jsonnet.MakeVM()
+	vm := jsonnetsecure.MakeSecureVM()
 	vm.TLACode("ctx", buf.String())
 
 	res, err := vm.EvaluateAnonymousSnippet(b.conf.TemplateURI, template.String())
@@ -157,7 +160,9 @@ func (b *Builder) addURLEncodedBody(template *bytes.Buffer, body interface{}) er
 	}
 
 	rb := strings.NewReader(u.Encode())
-	b.r.Body = io.NopCloser(rb)
+	if err := b.r.SetBody(io.NopCloser(rb)); err != nil {
+		return errors.WithStack(err)
+	}
 
 	return nil
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"time"
+
+	"github.com/gorilla/sessions"
 
 	"github.com/ory/x/urlx"
 
@@ -41,7 +44,7 @@ func NewManagerHTTP(r managerHTTPDependencies) *ManagerHTTP {
 	return &ManagerHTTP{
 		r: r,
 		cookieName: func(ctx context.Context) string {
-			return r.Config(ctx).SessionName()
+			return r.Config().SessionName(ctx)
 		},
 	}
 }
@@ -58,6 +61,29 @@ func (s *ManagerHTTP) UpsertAndIssueCookie(ctx context.Context, w http.ResponseW
 	return nil
 }
 
+func (s *ManagerHTTP) RefreshCookie(ctx context.Context, w http.ResponseWriter, r *http.Request, session *Session) error {
+	// If it is a session token there is nothing to do.
+	cookieHeader := r.Header.Get("X-Session-Cookie")
+	_, cookieErr := r.Cookie(s.cookieName(r.Context()))
+	if len(cookieHeader) == 0 && errors.Is(cookieErr, http.ErrNoCookie) {
+		return nil
+	}
+
+	cookie, err := s.getCookie(r)
+	if err != nil {
+		return err
+	}
+
+	expiresAt := getCookieExpiry(cookie)
+	if expiresAt == nil || expiresAt.Before(session.ExpiresAt) {
+		if err := s.IssueCookie(ctx, w, r, session); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *ManagerHTTP) IssueCookie(ctx context.Context, w http.ResponseWriter, r *http.Request, session *Session) error {
 	cookie, err := s.r.CookieManager(r.Context()).Get(r, s.cookieName(ctx))
 	// Fix for https://github.com/ory/kratos/issues/1695
@@ -65,15 +91,15 @@ func (s *ManagerHTTP) IssueCookie(ctx context.Context, w http.ResponseWriter, r 
 		return errors.WithStack(err)
 	}
 
-	if s.r.Config(ctx).SessionPath() != "" {
-		cookie.Options.Path = s.r.Config(ctx).SessionPath()
+	if s.r.Config().SessionPath(ctx) != "" {
+		cookie.Options.Path = s.r.Config().SessionPath(ctx)
 	}
 
-	if domain := s.r.Config(ctx).SessionDomain(); domain != "" {
+	if domain := s.r.Config().SessionDomain(ctx); domain != "" {
 		cookie.Options.Domain = domain
 	}
 
-	if alias := s.r.Config(ctx).SelfPublicURL(); s.r.Config(ctx).SelfPublicURL().String() != alias.String() {
+	if alias := s.r.Config().SelfPublicURL(ctx); s.r.Config().SelfPublicURL(ctx).String() != alias.String() {
 		// If a domain alias is detected use that instead.
 		cookie.Options.Domain = alias.Hostname()
 		cookie.Options.Path = alias.Path
@@ -88,20 +114,49 @@ func (s *ManagerHTTP) IssueCookie(ctx context.Context, w http.ResponseWriter, r 
 		_ = s.r.CSRFHandler().RegenerateToken(w, r)
 	}
 
-	if s.r.Config(ctx).SessionSameSiteMode() != 0 {
-		cookie.Options.SameSite = s.r.Config(ctx).SessionSameSiteMode()
+	if s.r.Config().SessionSameSiteMode(ctx) != 0 {
+		cookie.Options.SameSite = s.r.Config().SessionSameSiteMode(ctx)
 	}
 
 	cookie.Options.MaxAge = 0
-	if s.r.Config(ctx).SessionPersistentCookie() {
-		cookie.Options.MaxAge = int(s.r.Config(ctx).SessionLifespan().Seconds())
+	if s.r.Config().SessionPersistentCookie(ctx) {
+		if session.ExpiresAt.IsZero() {
+			cookie.Options.MaxAge = int(s.r.Config().SessionLifespan(ctx).Seconds())
+		} else {
+			cookie.Options.MaxAge = int(time.Until(session.ExpiresAt).Seconds())
+		}
 	}
 
 	cookie.Values["session_token"] = session.Token
+	cookie.Values["expires_at"] = session.ExpiresAt.UTC().Format(time.RFC3339Nano)
+
 	if err := cookie.Save(r, w); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+func getCookieExpiry(s *sessions.Session) *time.Time {
+	expiresAt, ok := s.Values["expires_at"].(string)
+	if !ok {
+		return nil
+	}
+
+	n, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+func (s *ManagerHTTP) getCookie(r *http.Request) (*sessions.Session, error) {
+	if cookie := r.Header.Get("X-Session-Cookie"); len(cookie) > 0 {
+		rr := *r
+		r = &rr
+		r.Header = http.Header{"Cookie": []string{s.cookieName(r.Context()) + "=" + cookie}}
+	}
+
+	return s.r.CookieManager(r.Context()).Get(r, s.cookieName(r.Context()))
 }
 
 func (s *ManagerHTTP) extractToken(r *http.Request) string {
@@ -109,13 +164,7 @@ func (s *ManagerHTTP) extractToken(r *http.Request) string {
 		return token
 	}
 
-	if cookie := r.Header.Get("X-Session-Cookie"); len(cookie) > 0 {
-		rr := *r
-		r = &rr
-		r.Header = http.Header{"Cookie": []string{s.cookieName(r.Context()) + "=" + cookie}}
-	}
-
-	cookie, err := s.r.CookieManager(r.Context()).Get(r, s.cookieName(r.Context()))
+	cookie, err := s.getCookie(r)
 	if err != nil {
 		token, _ := bearerTokenFromRequest(r)
 		return token
@@ -205,7 +254,7 @@ func (s *ManagerHTTP) DoesSessionSatisfy(r *http.Request, sess *Session, request
 		}
 
 		return NewErrAALNotSatisfied(
-			urlx.CopyWithQuery(urlx.AppendPaths(s.r.Config(r.Context()).SelfPublicURL(), "/self-service/login/browser"), url.Values{"aal": {"aal2"}}).String())
+			urlx.CopyWithQuery(urlx.AppendPaths(s.r.Config().SelfPublicURL(r.Context()), "/self-service/login/browser"), url.Values{"aal": {"aal2"}}).String())
 	}
 	return errors.Errorf("requested unknown aal: %s", requestedAAL)
 }

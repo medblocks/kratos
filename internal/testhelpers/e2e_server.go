@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/kratos/corp"
 	"github.com/ory/kratos/driver"
 	"github.com/ory/x/dbal"
 
@@ -39,7 +38,6 @@ import (
 type ConfigOptions map[string]interface{}
 
 func init() {
-	corp.SetContextualizer(new(corp.ContextNoOp))
 	dbal.RegisterDriver(func() dbal.Driver {
 		return driver.NewRegistryDefault()
 	})
@@ -101,7 +99,7 @@ func startE2EServerOnly(t *testing.T, configFile string, isTLS bool, configOptio
 
 	err = waitTimeout(t, eg, time.Second)
 	if err != nil && tries < 5 {
-		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "address already in use") {
+		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "address already in use") || strings.Contains(stdErr.String(), "address already in use") {
 			t.Logf("Detected an instance with port reuse, retrying #%d...", tries)
 			time.Sleep(time.Millisecond * 500)
 			cancel()

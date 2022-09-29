@@ -108,11 +108,11 @@ func (s *Strategy) continueSettingsFlow(
 		return err
 	}
 
-	if err := flow.EnsureCSRF(s.d, r, ctxUpdate.Flow.Type, s.d.Config(r.Context()).DisableAPIFlowEnforcement(), s.d.GenerateCSRFToken, p.CSRFToken); err != nil {
+	if err := flow.EnsureCSRF(s.d, r, ctxUpdate.Flow.Type, s.d.Config().DisableAPIFlowEnforcement(r.Context()), s.d.GenerateCSRFToken, p.CSRFToken); err != nil {
 		return err
 	}
 
-	if ctxUpdate.Session.AuthenticatedAt.Add(s.d.Config(r.Context()).SelfServiceFlowSettingsPrivilegedSessionMaxAge()).Before(time.Now()) {
+	if ctxUpdate.Session.AuthenticatedAt.Add(s.d.Config().SelfServiceFlowSettingsPrivilegedSessionMaxAge(r.Context())).Before(time.Now()) {
 		return errors.WithStack(settings.NewFlowNeedsReAuth())
 	}
 
@@ -120,7 +120,7 @@ func (s *Strategy) continueSettingsFlow(
 		return schema.NewRequiredError("#/password", "password")
 	}
 
-	hpw, err := s.d.Hasher().Generate(r.Context(), []byte(p.Password))
+	hpw, err := s.d.Hasher(r.Context()).Generate(r.Context(), []byte(p.Password))
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (s *Strategy) continueSettingsFlow(
 
 func (s *Strategy) PopulateSettingsMethod(r *http.Request, _ *identity.Identity, f *settings.Flow) error {
 	f.UI.SetCSRF(s.d.GenerateCSRFToken(r))
-	f.UI.Nodes.Upsert(NewPasswordNode("password").WithMetaLabel(text.NewInfoNodeInputPassword()))
+	f.UI.Nodes.Upsert(NewPasswordNode("password", node.InputAttributeAutocompleteNewPassword).WithMetaLabel(text.NewInfoNodeInputPassword()))
 	f.UI.Nodes.Append(node.NewInputField("method", "password", node.PasswordGroup, node.InputAttributeTypeSubmit).WithMetaLabel(text.NewInfoNodeLabelSave()))
 
 	return nil

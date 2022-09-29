@@ -1,0 +1,10 @@
+coverage:
+  status:
+    project:
+      default:
+        threshold: 1%
+ignore:
+  - "test"
+  - "internal"
+  - "docs"
+  - "contrib"

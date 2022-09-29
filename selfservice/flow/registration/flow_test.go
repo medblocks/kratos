@@ -1,12 +1,15 @@
 package registration_test
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/gofrs/uuid"
 
 	"github.com/tidwall/gjson"
 
@@ -29,7 +32,7 @@ func TestFakeFlow(t *testing.T) {
 	var r registration.Flow
 	require.NoError(t, faker.FakeData(&r))
 
-	assert.NotEmpty(t, r.ID)
+	assert.Equal(t, uuid.Nil, r.ID)
 	assert.NotEmpty(t, r.IssuedAt)
 	assert.NotEmpty(t, r.ExpiresAt)
 	assert.NotEmpty(t, r.RequestURL)
@@ -37,6 +40,7 @@ func TestFakeFlow(t *testing.T) {
 }
 
 func TestNewFlow(t *testing.T) {
+	ctx := context.Background()
 	conf, _ := internal.NewFastRegistryWithMocks(t)
 	t.Run("case=0", func(t *testing.T) {
 		r, err := registration.NewFlow(conf, 0, "csrf", &http.Request{
@@ -53,7 +57,7 @@ func TestNewFlow(t *testing.T) {
 		_, err := registration.NewFlow(conf, 0, "csrf", &http.Request{URL: &url.URL{Path: "/", RawQuery: "return_to=https://not-allowed/foobar"}, Host: "ory.sh"}, flow.TypeBrowser)
 		require.Error(t, err)
 
-		_, err = registration.NewFlow(conf, 0, "csrf", &http.Request{URL: &url.URL{Path: "/", RawQuery: "return_to=" + urlx.AppendPaths(conf.SelfPublicURL(), "/self-service/login/browser").String()}, Host: "ory.sh"}, flow.TypeBrowser)
+		_, err = registration.NewFlow(conf, 0, "csrf", &http.Request{URL: &url.URL{Path: "/", RawQuery: "return_to=" + urlx.AppendPaths(conf.SelfPublicURL(ctx), "/self-service/login/browser").String()}, Host: "ory.sh"}, flow.TypeBrowser)
 		require.NoError(t, err)
 	})
 
@@ -122,4 +126,14 @@ func TestFlowEncodeJSON(t *testing.T) {
 	assert.EqualValues(t, "", gjson.Get(jsonx.TestMarshalJSONString(t, &registration.Flow{RequestURL: "https://foo.bar?foo=bar"}), "return_to").String())
 	assert.EqualValues(t, "/bar", gjson.Get(jsonx.TestMarshalJSONString(t, &registration.Flow{RequestURL: "https://foo.bar?return_to=/bar"}), "return_to").String())
 	assert.EqualValues(t, "/bar", gjson.Get(jsonx.TestMarshalJSONString(t, registration.Flow{RequestURL: "https://foo.bar?return_to=/bar"}), "return_to").String())
+}
+
+func TestFlowDontOverrideReturnTo(t *testing.T) {
+	f := &registration.Flow{ReturnTo: "/foo"}
+	f.SetReturnTo()
+	assert.Equal(t, "/foo", f.ReturnTo)
+
+	f = &registration.Flow{RequestURL: "https://foo.bar?return_to=/bar"}
+	f.SetReturnTo()
+	assert.Equal(t, "/bar", f.ReturnTo)
 }

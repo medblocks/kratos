@@ -4,12 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/gobuffalo/pop/v6"
 
 	"github.com/pkg/errors"
-
-	"github.com/ory/kratos/corp"
 
 	"github.com/gofrs/uuid"
 
@@ -25,7 +24,7 @@ func (p *Persister) GetSession(ctx context.Context, sid uuid.UUID) (*session.Ses
 	defer span.End()
 
 	var s session.Session
-	nid := corp.ContextualizeNID(ctx, p.nid)
+	nid := p.NetworkID(ctx)
 	if err := p.GetConnection(ctx).Where("id = ? AND nid = ?", sid, nid).First(&s); err != nil {
 		return nil, sqlcon.HandleError(err)
 	}
@@ -46,8 +45,8 @@ func (p *Persister) ListSessionsByIdentity(ctx context.Context, iID uuid.UUID, a
 	ctx, span := p.r.Tracer(ctx).Tracer().Start(ctx, "persistence.sql.ListSessionsByIdentity")
 	defer span.End()
 
-	var s []*session.Session
-	nid := corp.ContextualizeNID(ctx, p.nid)
+	s := make([]*session.Session, 0)
+	nid := p.NetworkID(ctx)
 
 	if err := p.Transaction(ctx, func(ctx context.Context, c *pop.Connection) error {
 		q := c.Where("identity_id = ? AND nid = ?", iID, nid).Paginate(page, perPage)
@@ -81,7 +80,7 @@ func (p *Persister) UpsertSession(ctx context.Context, s *session.Session) error
 	ctx, span := p.r.Tracer(ctx).Tracer().Start(ctx, "persistence.sql.UpsertSession")
 	defer span.End()
 
-	s.NID = corp.ContextualizeNID(ctx, p.nid)
+	s.NID = p.NetworkID(ctx)
 
 	if err := p.Connection(ctx).Find(new(session.Session), s.ID); errors.Is(err, sql.ErrNoRows) {
 		// This must not be eager or identities will be created / updated
@@ -108,10 +107,10 @@ func (p *Persister) DeleteSessionsByIdentity(ctx context.Context, identityID uui
 	// #nosec G201
 	count, err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
 		"DELETE FROM %s WHERE identity_id = ? AND nid = ?",
-		corp.ContextualizeTableName(ctx, "sessions"),
+		"sessions",
 	),
 		identityID,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).ExecWithCount()
 	if err != nil {
 		return sqlcon.HandleError(err)
@@ -129,7 +128,7 @@ func (p *Persister) GetSessionByToken(ctx context.Context, token string) (*sessi
 	var s session.Session
 	if err := p.GetConnection(ctx).Where("token = ? AND nid = ?",
 		token,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).First(&s); err != nil {
 		return nil, sqlcon.HandleError(err)
 	}
@@ -151,10 +150,10 @@ func (p *Persister) DeleteSessionByToken(ctx context.Context, token string) erro
 	// #nosec G201
 	count, err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
 		"DELETE FROM %s WHERE token = ? AND nid = ?",
-		corp.ContextualizeTableName(ctx, "sessions"),
+		"sessions",
 	),
 		token,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).ExecWithCount()
 	if err != nil {
 		return sqlcon.HandleError(err)
@@ -172,10 +171,10 @@ func (p *Persister) RevokeSessionByToken(ctx context.Context, token string) erro
 	// #nosec G201
 	count, err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
 		"UPDATE %s SET active = false WHERE token = ? AND nid = ?",
-		corp.ContextualizeTableName(ctx, "sessions"),
+		"sessions",
 	),
 		token,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).ExecWithCount()
 	if err != nil {
 		return sqlcon.HandleError(err)
@@ -195,11 +194,11 @@ func (p *Persister) RevokeSession(ctx context.Context, iID, sID uuid.UUID) error
 	// #nosec G201
 	err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
 		"UPDATE %s SET active = false WHERE id = ? AND identity_id = ? AND nid = ?",
-		corp.ContextualizeTableName(ctx, "sessions"),
+		"sessions",
 	),
 		sID,
 		iID,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).Exec()
 	if err != nil {
 		return sqlcon.HandleError(err)
@@ -215,14 +214,30 @@ func (p *Persister) RevokeSessionsIdentityExcept(ctx context.Context, iID, sID u
 	// #nosec G201
 	count, err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
 		"UPDATE %s SET active = false WHERE identity_id = ? AND id != ? AND nid = ?",
-		corp.ContextualizeTableName(ctx, "sessions"),
+		"sessions",
 	),
 		iID,
 		sID,
-		corp.ContextualizeNID(ctx, p.nid),
+		p.NetworkID(ctx),
 	).ExecWithCount()
 	if err != nil {
 		return 0, sqlcon.HandleError(err)
 	}
 	return count, nil
+}
+
+func (p *Persister) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time, limit int) error {
+	err := p.GetConnection(ctx).RawQuery(fmt.Sprintf(
+		"DELETE FROM %s WHERE id in (SELECT id FROM (SELECT id FROM %s c WHERE expires_at <= ? and nid = ? ORDER BY expires_at ASC LIMIT %d ) AS s )",
+		"sessions",
+		"sessions",
+		limit,
+	),
+		expiresAt,
+		p.NetworkID(ctx),
+	).Exec()
+	if err != nil {
+		return sqlcon.HandleError(err)
+	}
+	return nil
 }

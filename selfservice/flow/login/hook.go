@@ -12,6 +12,8 @@ import (
 	"github.com/ory/kratos/identity"
 	"github.com/ory/kratos/selfservice/flow"
 	"github.com/ory/kratos/session"
+	"github.com/ory/kratos/ui/container"
+	"github.com/ory/kratos/ui/node"
 	"github.com/ory/kratos/x"
 )
 
@@ -21,7 +23,7 @@ type (
 	}
 
 	PostHookExecutor interface {
-		ExecuteLoginPostHook(w http.ResponseWriter, r *http.Request, a *Flow, s *session.Session) error
+		ExecuteLoginPostHook(w http.ResponseWriter, r *http.Request, g node.UiNodeGroup, a *Flow, s *session.Session) error
 	}
 
 	HooksProvider interface {
@@ -35,6 +37,7 @@ type (
 		config.Provider
 		session.ManagementProvider
 		session.PersistenceProvider
+		x.CSRFTokenGeneratorProvider
 		x.WriterProvider
 		x.LoggingProvider
 
@@ -62,7 +65,7 @@ func NewHookExecutor(d executorDependencies) *HookExecutor {
 
 func (e *HookExecutor) requiresAAL2(r *http.Request, s *session.Session, a *Flow) (*session.ErrAALNotSatisfied, bool) {
 	var aalErr *session.ErrAALNotSatisfied
-	err := e.d.SessionManager().DoesSessionSatisfy(r, s, e.d.Config(r.Context()).SessionWhoAmIAAL())
+	err := e.d.SessionManager().DoesSessionSatisfy(r, s, e.d.Config().SessionWhoAmIAAL(r.Context()))
 	if ok := errors.As(err, &aalErr); !ok {
 		return nil, false
 	}
@@ -74,18 +77,42 @@ func (e *HookExecutor) requiresAAL2(r *http.Request, s *session.Session, a *Flow
 	return aalErr, true
 }
 
-func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *Flow, i *identity.Identity, s *session.Session) error {
-	if err := s.Activate(i, e.d.Config(r.Context()), time.Now().UTC()); err != nil {
+func (e *HookExecutor) handleLoginError(_ http.ResponseWriter, r *http.Request, g node.UiNodeGroup, f *Flow, i *identity.Identity, flowError error) error {
+	if f != nil {
+		if i != nil {
+			cont, err := container.NewFromStruct("", g, i.Traits, "traits")
+			if err != nil {
+				e.d.Logger().WithError(err).Warn("could not update flow UI")
+				return err
+			}
+
+			for _, n := range cont.Nodes {
+				// we only set the value and not the whole field because we want to keep types from the initial form generation
+				f.UI.Nodes.SetValueAttribute(n.ID(), n.Attributes.GetValue())
+			}
+		}
+
+		if f.Type == flow.TypeBrowser {
+			f.UI.SetCSRF(e.d.GenerateCSRFToken(r))
+		}
+	}
+
+	return flowError
+}
+
+func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, g node.UiNodeGroup, a *Flow, i *identity.Identity, s *session.Session) error {
+	if err := s.Activate(r.Context(), i, e.d.Config(), time.Now().UTC()); err != nil {
 		return err
 	}
 
 	// Verify the redirect URL before we do any other processing.
-	c := e.d.Config(r.Context())
-	returnTo, err := x.SecureRedirectTo(r, c.SelfServiceBrowserDefaultReturnTo(),
+	c := e.d.Config()
+	returnTo, err := x.SecureRedirectTo(r, c.SelfServiceBrowserDefaultReturnTo(r.Context()),
+		x.SecureRedirectReturnTo(a.ReturnTo),
 		x.SecureRedirectUseSourceURL(a.RequestURL),
-		x.SecureRedirectAllowURLs(c.SelfServiceBrowserAllowedReturnToDomains()),
-		x.SecureRedirectAllowSelfServiceURLs(c.SelfPublicURL()),
-		x.SecureRedirectOverrideDefaultReturnTo(e.d.Config(r.Context()).SelfServiceFlowLoginReturnTo(a.Active.String())),
+		x.SecureRedirectAllowURLs(c.SelfServiceBrowserAllowedReturnToDomains(r.Context())),
+		x.SecureRedirectAllowSelfServiceURLs(c.SelfPublicURL(r.Context())),
+		x.SecureRedirectOverrideDefaultReturnTo(e.d.Config().SelfServiceFlowLoginReturnTo(r.Context(), a.Active.String())),
 	)
 	if err != nil {
 		return err
@@ -99,7 +126,7 @@ func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *
 		WithField("flow_method", a.Active).
 		Debug("Running ExecuteLoginPostHook.")
 	for k, executor := range e.d.PostLoginHooks(r.Context(), a.Active) {
-		if err := executor.ExecuteLoginPostHook(w, r, a, s); err != nil {
+		if err := executor.ExecuteLoginPostHook(w, r, g, a, s); err != nil {
 			if errors.Is(err, ErrHookAbortFlow) {
 				e.d.Logger().
 					WithRequest(r).
@@ -111,7 +138,7 @@ func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *
 					Debug("A ExecuteLoginPostHook hook aborted early.")
 				return nil
 			}
-			return err
+			return e.handleLoginError(w, r, g, a, i, err)
 		}
 
 		e.d.Logger().

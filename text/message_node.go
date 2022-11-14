@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package text
 
 func NewInfoNodeLabelVerifyOTP() *Message {
@@ -52,6 +55,14 @@ func NewInfoNodeInputEmail() *Message {
 	return &Message{
 		ID:   InfoNodeLabelEmail,
 		Text: "Email",
+		Type: Info,
+	}
+}
+
+func NewInfoNodeResendOTP() *Message {
+	return &Message{
+		ID:   InfoNodeLabelEmail,
+		Text: "Resend code",
 		Type: Info,
 	}
 }

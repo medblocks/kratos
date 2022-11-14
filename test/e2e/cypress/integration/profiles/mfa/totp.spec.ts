@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 import { gen, website } from "../../../helpers"
 import { authenticator } from "otplib"
 import { routes as react } from "../../../helpers/react"
@@ -82,7 +85,7 @@ context("2FA lookup secrets", () => {
         })
         cy.get('*[name="method"][value="totp"]').click()
         cy.location("pathname").should((loc) => {
-          expect(loc).to.oneOf(["/welcome", "/"])
+          expect(loc).to.oneOf(["/welcome", "/", "/sessions"])
         })
         cy.getSession({
           expectAal: "aal2",

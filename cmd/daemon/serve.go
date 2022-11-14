@@ -1,47 +1,40 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package daemon
 
 import (
+	stdctx "context"
 	"crypto/tls"
 	"net/http"
 
-	"github.com/ory/x/servicelocatorx"
-
 	"github.com/pkg/errors"
-	"golang.org/x/net/context"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/ory/kratos/schema"
-
-	"github.com/ory/kratos/selfservice/flow/recovery"
-
-	"github.com/ory/x/reqlog"
-
-	"github.com/ory/kratos/cmd/courier"
-	"github.com/ory/kratos/driver/config"
-
 	"github.com/rs/cors"
-
-	prometheus "github.com/ory/x/prometheusx"
-
-	"github.com/ory/analytics-go/v4"
-
-	"github.com/ory/x/healthx"
-	"github.com/ory/x/networkx"
-
-	stdctx "context"
-
 	"github.com/spf13/cobra"
 	"github.com/urfave/negroni"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/ory/analytics-go/v4"
 	"github.com/ory/graceful"
+	"github.com/ory/x/healthx"
 	"github.com/ory/x/metricsx"
+	"github.com/ory/x/networkx"
+	"github.com/ory/x/otelx"
+	prometheus "github.com/ory/x/prometheusx"
+	"github.com/ory/x/reqlog"
+	"github.com/ory/x/servicelocatorx"
 
+	"github.com/ory/kratos/cmd/courier"
 	"github.com/ory/kratos/driver"
+	"github.com/ory/kratos/driver/config"
 	"github.com/ory/kratos/identity"
+	"github.com/ory/kratos/schema"
 	"github.com/ory/kratos/selfservice/errorx"
 	"github.com/ory/kratos/selfservice/flow/login"
 	"github.com/ory/kratos/selfservice/flow/logout"
+	"github.com/ory/kratos/selfservice/flow/recovery"
 	"github.com/ory/kratos/selfservice/flow/registration"
 	"github.com/ory/kratos/selfservice/flow/settings"
 	"github.com/ory/kratos/selfservice/flow/verification"
@@ -115,22 +108,21 @@ func ServePublic(r driver.Registry, cmd *cobra.Command, args []string, slOpts *s
 	r.RegisterPublicRoutes(ctx, router)
 	r.PrometheusManager().RegisterRouter(router.Router)
 
-	var handler http.Handler = n
-	options, enabled := r.Config().CORS(ctx, "public")
-	if enabled {
-		handler = cors.New(options).Handler(handler)
+	if options, enabled := r.Config().CORS(ctx, "public"); enabled {
+		n.UseFunc(cors.New(options).ServeHTTP)
 	}
 
-	certs := c.GetTSLCertificatesForPublic(ctx)
+	certs := c.GetTLSCertificatesForPublic(ctx)
 
+	var handler http.Handler = n
 	if tracer := r.Tracer(ctx); tracer.IsLoaded() {
-		handler = x.TraceHandler(handler)
+		handler = otelx.TraceHandler(handler, otelhttp.WithTracerProvider(tracer.Provider()))
 	}
 
 	// #nosec G112 - the correct settings are set by graceful.WithDefaults
 	server := graceful.WithDefaults(&http.Server{
 		Handler:   handler,
-		TLSConfig: &tls.Config{Certificates: certs, MinVersion: tls.VersionTLS12},
+		TLSConfig: &tls.Config{GetCertificate: certs, MinVersion: tls.VersionTLS12},
 	})
 	addr := c.PublicListenOn(ctx)
 
@@ -186,17 +178,17 @@ func ServeAdmin(r driver.Registry, cmd *cobra.Command, args []string, slOpts *se
 	r.PrometheusManager().RegisterRouter(router.Router)
 
 	n.UseHandler(router)
-	certs := c.GetTSLCertificatesForAdmin(ctx)
+	certs := c.GetTLSCertificatesForAdmin(ctx)
 
 	var handler http.Handler = n
 	if tracer := r.Tracer(ctx); tracer.IsLoaded() {
-		handler = x.TraceHandler(n)
+		handler = otelx.TraceHandler(handler, otelhttp.WithTracerProvider(tracer.Provider()))
 	}
 
 	// #nosec G112 - the correct settings are set by graceful.WithDefaults
 	server := graceful.WithDefaults(&http.Server{
 		Handler:   handler,
-		TLSConfig: &tls.Config{Certificates: certs, MinVersion: tls.VersionTLS12},
+		TLSConfig: &tls.Config{GetCertificate: certs, MinVersion: tls.VersionTLS12},
 	})
 
 	addr := c.AdminListenOn(ctx)

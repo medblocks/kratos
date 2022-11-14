@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 import { APP_URL, appPrefix, gen } from "../../../../helpers"
 import { routes as express } from "../../../../helpers/express"
 
@@ -29,6 +32,9 @@ context("Registration success with email profile with webhooks", () => {
         cy.get('input[name="password"]').type(password)
 
         cy.submitPasswordForm()
+        if (app === "express") {
+          cy.get("a[href*='sessions']").click()
+        }
         cy.get("pre").should("contain.text", email)
 
         cy.getSession().should((session) => {

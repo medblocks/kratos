@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package identity
 
 import (
@@ -72,6 +75,7 @@ const (
 	// CredentialsTypeRecoveryLink is a special credential type linked to the link strategy (recovery flow).
 	// It is not used within the credentials object itself.
 	CredentialsTypeRecoveryLink CredentialsType = "link_recovery"
+	CredentialsTypeRecoveryCode CredentialsType = "code_recovery"
 )
 
 // Credentials represents a specific credential type

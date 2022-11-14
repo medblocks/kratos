@@ -1,4 +1,8 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 import {
+  appPrefix,
   APP_URL,
   assertVerifiableAddress,
   gen,
@@ -9,11 +13,13 @@ import {
   parseHtml,
   pollInterval,
   privilegedLifespan,
+  extractRecoveryCode,
 } from "../helpers"
 
 import dayjs from "dayjs"
 import YAML from "yamljs"
 import { Session } from "@ory/kratos-client"
+import { RecoveryStrategy } from "."
 
 const configFile = "kratos.generated.yml"
 
@@ -146,6 +152,34 @@ Cypress.Commands.add("longLinkLifespan", ({} = {}) => {
   })
 })
 
+Cypress.Commands.add("shortCodeLifespan", ({} = {}) => {
+  updateConfigFile((config) => {
+    config.selfservice.methods.code.config.lifespan = "1ms"
+    return config
+  })
+})
+
+Cypress.Commands.add("longCodeLifespan", ({} = {}) => {
+  updateConfigFile((config) => {
+    config.selfservice.methods.code.config.lifespan = "1m"
+    return config
+  })
+})
+
+Cypress.Commands.add("shortCodeLifespan", ({} = {}) => {
+  updateConfigFile((config) => {
+    config.selfservice.methods.code.config.lifespan = "1ms"
+    return config
+  })
+})
+
+Cypress.Commands.add("longCodeLifespan", ({} = {}) => {
+  updateConfigFile((config) => {
+    config.selfservice.methods.code.config.lifespan = "1m"
+    return config
+  })
+})
+
 Cypress.Commands.add("longRecoveryLifespan", ({} = {}) => {
   updateConfigFile((config) => {
     config.selfservice.flows.recovery.lifespan = "1m"
@@ -214,10 +248,37 @@ Cypress.Commands.add("enableVerification", ({} = {}) => {
 
 Cypress.Commands.add("enableRecovery", ({} = {}) => {
   updateConfigFile((config) => {
+    if (!config.selfservice.flows.recovery) {
+      config.selfservice.flows.recovery = {}
+    }
     config.selfservice.flows.recovery.enabled = true
     return config
   })
 })
+
+Cypress.Commands.add("useRecoveryStrategy", (strategy: RecoveryStrategy) => {
+  updateConfigFile((config) => {
+    if (!config.selfservice.flows.recovery) {
+      config.selfservice.flows.recovery = {}
+    }
+    config.selfservice.flows.recovery.use = strategy
+    if (!config.selfservice.methods[strategy]) {
+      config.selfservice.methods[strategy] = {}
+    }
+    config.selfservice.methods[strategy].enabled = true
+    return config
+  })
+})
+
+Cypress.Commands.add(
+  "disableRecoveryStrategy",
+  (strategy: RecoveryStrategy) => {
+    updateConfigFile((config) => {
+      config.selfservice.methods[strategy].enabled = false
+      return config
+    })
+  },
+)
 
 Cypress.Commands.add("disableRecovery", ({} = {}) => {
   updateConfigFile((config) => {
@@ -506,6 +567,7 @@ Cypress.Commands.add("addVirtualAuthenticator", () =>
 Cypress.Commands.add(
   "registerOidc",
   ({
+    app,
     email,
     website,
     scopes,
@@ -518,7 +580,7 @@ Cypress.Commands.add(
   }) => {
     cy.visit(route)
 
-    cy.triggerOidc()
+    cy.triggerOidc(app)
 
     cy.get("#username").type(email)
     if (rememberLogin) {
@@ -551,6 +613,7 @@ Cypress.Commands.add(
     } else {
       cy.get("#reject").click()
     }
+
     cy.location("pathname").should("not.include", "consent")
 
     if (expectSession) {
@@ -615,13 +678,73 @@ Cypress.Commands.add("remoteCourierRecoveryTemplates", ({} = {}) => {
   })
 })
 
+Cypress.Commands.add("remoteCourierRecoveryCodeTemplates", ({} = {}) => {
+  updateConfigFile((config) => {
+    config.courier.templates = {
+      recovery_code: {
+        invalid: {
+          email: {
+            body: {
+              html: "base64://cmVjb3ZlcnlfY29kZV9pbnZhbGlkIFJFTU9URSBURU1QTEFURSBIVE1M", // only
+              plaintext:
+                "base64://cmVjb3ZlcnlfY29kZV9pbnZhbGlkIFJFTU9URSBURU1QTEFURSBUWFQ=",
+            },
+            subject:
+              "base64://cmVjb3ZlcnlfY29kZV9pbnZhbGlkIFJFTU9URSBURU1QTEFURSBTVUJKRUNU",
+          },
+        },
+        valid: {
+          email: {
+            body: {
+              html: "base://cmVjb3ZlcnlfY29kZV92YWxpZCBSRU1PVEUgVEVNUExBVEUgSFRNTA==",
+              plaintext:
+                "base64://cmVjb3ZlcnlfY29kZV92YWxpZCBSRU1PVEUgVEVNUExBVEUgVFhU",
+            },
+            subject:
+              "base64://cmVjb3ZlcnlfY29kZV92YWxpZCBSRU1PVEUgVEVNUExBVEUgU1VCSkVDVA==",
+          },
+        },
+      },
+    }
+    return config
+  })
+})
+
+Cypress.Commands.add("resetCourierTemplates", (type) => {
+  updateConfigFile((config) => {
+    config.courier.templates = {
+      [type]: {
+        invalid: {
+          email: {
+            body: {},
+            subject: "",
+          },
+        },
+        valid: {
+          email: {
+            body: {
+              body: {},
+              subject: "",
+            },
+          },
+        },
+      },
+    }
+    return config
+  })
+})
+
 Cypress.Commands.add(
   "loginOidc",
-  ({ expectSession = true, url = APP_URL + "/login" }) => {
+  ({ app, expectSession = true, url = APP_URL + "/login" }) => {
     cy.visit(url)
-    cy.triggerOidc("hydra")
+    cy.triggerOidc(app, "hydra")
     cy.location("href").should("not.eq", "/consent")
     if (expectSession) {
+      // for some reason react flakes here although the login succeeded and there should be a session it fails
+      if (app === "react") {
+        cy.wait(2000) // adding arbitrary wait here. not sure if there is a better way in this case
+      }
       cy.getSession()
     } else {
       cy.noSession()
@@ -806,8 +929,11 @@ Cypress.Commands.add(
   "getSession",
   ({ expectAal = "aal1", expectMethods = [] } = {}) => {
     // Do the request once to ensure we have a session (with retry)
-    cy.request("GET", `${KRATOS_PUBLIC}/sessions/whoami`)
-      .its("status")
+    cy.request({
+      method: "GET",
+      url: `${KRATOS_PUBLIC}/sessions/whoami`,
+    })
+      .its("status") // adds retry
       .should("eq", 200)
 
     // Return the session for further propagation
@@ -925,6 +1051,23 @@ Cypress.Commands.add("recoverEmailButExpired", ({ expect: { email } }) => {
     cy.visit(link.href)
   })
 })
+
+Cypress.Commands.add(
+  "recoveryEmailWithCode",
+  ({ expect: { email, enterCode = true } }) => {
+    cy.getMail({ removeMail: true }).should((message) => {
+      expect(message.subject).to.equal("Recover access to your account")
+      expect(message.toAddresses[0].trim()).to.equal(email)
+
+      const code = extractRecoveryCode(message.body)
+      expect(code).to.not.be.undefined
+      expect(code.length).to.equal(8)
+      if (enterCode) {
+        cy.get("input[name='code']").type(code)
+      }
+    })
+  },
+)
 
 Cypress.Commands.add(
   "recoverEmail",
@@ -1072,9 +1215,9 @@ Cypress.Commands.add(
       )
     } else {
       cy.location("pathname").should("contain", "error")
-      cy.get("code").should(
+      cy.get("div").should(
         "contain.text",
-        'Requested return_to URL \\"https://not-allowed\\" is not allowed.',
+        'Requested return_to URL "https://not-allowed" is not allowed.',
       )
     }
   },
@@ -1105,7 +1248,7 @@ Cypress.Commands.add(
       })
 
       cy.location("pathname").should("include", "/error")
-      cy.get("code").should("contain.text", "csrf_token")
+      cy.get(`div`).should("contain.text", "CSRF")
     } else {
       cy.location("pathname").should((got) => {
         expect(got).to.eql(pathname)
@@ -1132,6 +1275,17 @@ Cypress.Commands.add(
         return
       }
       expect(loc.pathname + loc.search).not.to.eql(initial)
+    })
+  },
+)
+
+Cypress.Commands.add(
+  "removeAttribute",
+  (selectors: string[], attribute: string) => {
+    selectors.forEach((selector) => {
+      cy.get(selector).then(($el) => {
+        $el.removeAttr(attribute)
+      })
     })
   },
 )

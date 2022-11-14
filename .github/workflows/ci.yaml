@@ -66,9 +66,9 @@ jobs:
           docker create --name hydra -p 4445:4445 -p 4444:4444 \
             -e DSN=memory \
             -e URLS_SELF_ISSUER=http://localhost:4444/ \
-            -e URLS_LOGIN=http://127.0.0.1:4499/login \
-            -e URLS_CONSENT=http://127.0.0.1:4499/consent \
-            oryd/hydra:v1.9.2-sqlite serve all --dangerous-force-http
+            -e URLS_LOGIN=http://localhost:4499/login \
+            -e URLS_CONSENT=http://localhost:4499/consent \
+            oryd/hydra:v2.0.2 serve all --dev
           docker start hydra
           docker logs -f hydra &> /tmp/hydra.log &
         name: Start Hydra
@@ -77,7 +77,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-go@v2
         with:
-          go-version: "~1.18"
+          go-version: "1.19"
       - run: go list -json > go.list
       - name: Run nancy
         uses: sonatype-nexus-community/nancy-github-action@v1.0.2
@@ -89,7 +89,7 @@ jobs:
           GOGC: 100
         with:
           args: --timeout 10m0s
-          version: v1.47.3
+          version: v1.49.0
           skip-go-installation: true
           skip-pkg-cache: true
       - name: Build Kratos
@@ -138,6 +138,9 @@ jobs:
       matrix:
         database: ["postgres", "cockroach", "sqlite", "mysql"]
     steps:
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
       - run: |
           docker create --name cockroach -p 26257:26257 \
             cockroachdb/cockroach:v20.2.5 start-single-node --insecure
@@ -157,10 +160,13 @@ jobs:
           cd test/e2e; npm ci
           npm i -g expo-cli
         name: Install node deps
+      - run: |
+          sudo apt-get install -y moreutils gettext
+        name: Install tools
       - name: Setup Go
         uses: actions/setup-go@v2
         with:
-          go-version: "~1.18"
+          go-version: "1.19"
       - name: Install selfservice-ui-react-native
         uses: actions/checkout@v2
         with:
@@ -185,6 +191,7 @@ jobs:
         env:
           RN_UI_PATH: react-native-ui
           NODE_UI_PATH: node-ui
+          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
       - if: failure()
         uses: actions/upload-artifact@v2
         with:

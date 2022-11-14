@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package xsql
 
 import (
@@ -16,6 +19,7 @@ import (
 	"github.com/ory/kratos/selfservice/flow/registration"
 	"github.com/ory/kratos/selfservice/flow/settings"
 	"github.com/ory/kratos/selfservice/flow/verification"
+	"github.com/ory/kratos/selfservice/strategy/code"
 	"github.com/ory/kratos/selfservice/strategy/link"
 	"github.com/ory/kratos/session"
 )
@@ -26,6 +30,7 @@ func CleanSQL(t *testing.T, c *pop.Connection) {
 		new(continuity.Container).TableName(ctx),
 		new(courier.Message).TableName(ctx),
 
+		new(session.Device).TableName(ctx),
 		new(session.Session).TableName(ctx),
 		new(login.Flow).TableName(ctx),
 		new(registration.Flow).TableName(ctx),
@@ -33,6 +38,7 @@ func CleanSQL(t *testing.T, c *pop.Connection) {
 
 		new(link.RecoveryToken).TableName(ctx),
 		new(link.VerificationToken).TableName(ctx),
+		new(code.RecoveryCode).TableName(ctx),
 
 		new(recovery.Flow).TableName(ctx),
 

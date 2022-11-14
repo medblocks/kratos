@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package verification
 
 import (
@@ -75,7 +78,7 @@ func (s *ErrorHandler) WriteFlowError(
 			return
 		}
 
-		a.UI.Messages.Add(text.NewErrorValidationVerificationFlowExpired(e.Ago))
+		a.UI.Messages.Add(text.NewErrorValidationVerificationFlowExpired(e.ExpiredAt))
 		if err := s.d.VerificationFlowPersister().CreateVerificationFlow(r.Context(), a); err != nil {
 			s.forward(w, r, a, err)
 			return

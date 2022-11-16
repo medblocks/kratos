@@ -1,4 +1,4 @@
-version: v0.7.1-alpha.1
+version: v0.10.1
 
 dsn: memory
 
@@ -26,8 +26,6 @@ selfservice:
       enabled: true
     link:
       enabled: false
-    code:
-      enabled: true
 
   flows:
     error:
@@ -41,7 +39,6 @@ selfservice:
     recovery:
       enabled: true
       ui_url: http://127.0.0.1:4455/recovery
-      use: code
 
     verification:
       enabled: true
@@ -65,7 +62,10 @@ selfservice:
           hooks:
             - hook: session
 
-log:
+oauth2_provider:
+  url: http://hydra:4445
+
+log:  
   level: debug
   format: text
   leak_sensitive_values: true
